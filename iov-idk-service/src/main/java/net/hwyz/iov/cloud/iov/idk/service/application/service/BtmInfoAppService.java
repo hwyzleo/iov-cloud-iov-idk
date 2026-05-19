@@ -4,13 +4,14 @@ import cn.hutool.core.util.ObjUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.hwyz.iov.cloud.framework.common.util.StrUtil;
-import net.hwyz.iov.cloud.iov.idk.service.infrastructure.persistence.mapper.BtmLogMapper;
-import net.hwyz.iov.cloud.iov.idk.service.infrastructure.persistence.mapper.BtmMapper;
-import net.hwyz.iov.cloud.iov.idk.service.infrastructure.persistence.po.BtmLogPo;
-import net.hwyz.iov.cloud.iov.idk.service.infrastructure.persistence.po.BtmPo;
+import net.hwyz.iov.cloud.iov.idk.service.application.assembler.BtmAssembler;
+import net.hwyz.iov.cloud.iov.idk.service.application.dto.cmd.BtmImportCmd;
+import net.hwyz.iov.cloud.iov.idk.service.domain.model.entity.Btm;
+import net.hwyz.iov.cloud.iov.idk.service.domain.model.entity.BtmLog;
+import net.hwyz.iov.cloud.iov.idk.service.domain.repository.BtmLogRepository;
+import net.hwyz.iov.cloud.iov.idk.service.domain.repository.BtmRepository;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 蓝牙模块信息相关应用服务类
@@ -22,49 +23,40 @@ import java.util.List;
 @RequiredArgsConstructor
 public class BtmInfoAppService {
 
-    private final BtmMapper btmMapper;
-    private final BtmLogMapper btmLogMapper;
+    private final BtmRepository btmRepository;
+    private final BtmLogRepository btmLogRepository;
+    private final BtmAssembler btmAssembler = BtmAssembler.INSTANCE;
 
-    /**
-     * 批量导入中央计算平台信息
-     *
-     * @param batchNum     批次号
-     * @param supplierCode 供应商编码
-     * @param btmList      蓝牙模块列表
-     */
-    public void batchImport(String batchNum, String supplierCode, List<BtmPo> btmList) {
+    @Transactional(rollbackFor = Exception.class)
+    public void batchImport(BtmImportCmd cmd) {
+        String batchNum = cmd.getBatchNum();
+        String supplierCode = cmd.getSupplierCode();
         if (StrUtil.isBlank(supplierCode)) {
             log.warn("数据批次[{}]蓝牙模块信息供应商编码为空", batchNum);
         }
-        for (BtmPo btmPo : btmList) {
-            if (ObjUtil.isNull(btmMapper.selectBySn(btmPo.getSn()))) {
-                btmPo.setSupplierCode(supplierCode);
-                btmMapper.insertPo(btmPo);
-                recordLog(btmPo, "数据批次[" + batchNum + "]数据导入");
+        for (Btm btm : btmAssembler.toDomainList(cmd.getBtmList())) {
+            if (ObjUtil.isNull(btmRepository.findBySn(btm.getSn()))) {
+                btm.setSupplierCode(supplierCode);
+                btmRepository.save(btm);
+                recordLog(btm, "数据批次[" + batchNum + "]数据导入");
             } else {
-                log.warn("数据批次[{}]蓝牙模块信息[{}]已存在", batchNum, btmPo.getSn());
+                log.warn("数据批次[{}]蓝牙模块信息[{}]已存在", batchNum, btm.getSn());
             }
         }
     }
 
-    /**
-     * 记录蓝牙模块信息变更日志
-     *
-     * @param btmPo  蓝牙模块对象
-     * @param remark 变更备注
-     */
-    private void recordLog(BtmPo btmPo, String remark) {
-        btmLogMapper.insertPo(BtmLogPo.builder()
-                .sn(btmPo.getSn())
-                .configWord(btmPo.getConfigWord())
-                .hardwareVer(btmPo.getHardwareVer())
-                .softwareVer(btmPo.getSoftwareVer())
-                .hardwareNo(btmPo.getHardwareNo())
-                .softwareNo(btmPo.getSoftwareNo())
-                .hsm(btmPo.getHsm())
-                .mac(btmPo.getMac())
+    private void recordLog(Btm btm, String remark) {
+        BtmLog btmLog = BtmLog.builder()
+                .sn(btm.getSn())
+                .configWord(btm.getConfigWord())
+                .hardwareVer(btm.getHardwareVer())
+                .softwareVer(btm.getSoftwareVer())
+                .hardwareNo(btm.getHardwareNo())
+                .softwareNo(btm.getSoftwareNo())
+                .hsm(btm.getHsm())
+                .mac(btm.getMac())
                 .description(remark)
-                .build());
+                .build();
+        btmLogRepository.save(btmLog);
     }
-
 }
